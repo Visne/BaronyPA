@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <fstream>
 
 #define PLUGIN_NAME    "BaronyPA"
 #define PLUGIN_VERSION "0.1.2"
@@ -28,9 +29,12 @@
 
 #define BARONY_STABLE_VERSION           "v4.0.2"
 #define BARONY_STABLE_DEFAULT_BASE      0x140000000
-#define BARONY_STABLE_VERSION_OFFSET    0x70ff30
-#define BARONY_STABLE_CLIENT_NUM_OFFSET 0x7f4a48
-#define BARONY_STABLE_PLAYERS_OFFSET    0x8375a8
+#define BARONY_STABLE_VERSION_OFFSET    0x876451
+#define BARONY_STABLE_CLIENT_NUM_OFFSET 0xa14aa4
+#define BARONY_STABLE_PLAYERS_OFFSET    0xb5df00
+
+#define WINDOWS_BINARY_NAME             "barony.exe"
+#define LINUX_BINARY_NAME               "barony.x86_64"
 
 enum offset_index {
     OFFSET_VERSION,
@@ -188,6 +192,29 @@ void mumble_shutdown() {
         }
 }
 
+// Get the base address of a Linux process by PID
+uintptr_t get_base_address(uint64_t pid) {
+    std::string procfile = "/proc/" + std::to_string(pid) + "/maps";
+    std::ifstream file(procfile);
+    if (!file.is_open())
+    {
+        mumbleAPI.log(ownID, ("Failed to open " + procfile).c_str());
+        return 0;
+    }
+
+    std::string line;
+    while(std::getline(file, line)) {
+        if (line.find(LINUX_BINARY_NAME) == std::string::npos)
+            continue;
+
+        std::string baseAddrStr = line.substr(0, line.find('-'));
+        return std::stoul(baseAddrStr, nullptr, 16);
+    }
+
+    mumbleAPI.log(ownID, ("Couldn't find base address in {}" + procfile).c_str());
+    return 0;
+}
+
 // Positional Audio
 
 uint8_t mumble_initPositionalData(const char* const* programNames,
@@ -196,7 +223,11 @@ uint8_t mumble_initPositionalData(const char* const* programNames,
         // Check if Barony is open
 
         for (size_t i = 0; i < programCount; i++) {
-            if (strcmp(programNames[i], "barony.exe") == 0) {
+#if defined(_WIN32)
+            if (strcmp(programNames[i], WINDOWS_BINARY_NAME) == 0) {
+#elif defined(__linux__)
+            if (strcmp(programNames[i], LINUX_BINARY_NAME) == 0) {
+#endif
                 baronyPID = programPIDS[i];
                 mumbleAPI.log(ownID, "Found Barony:");
                 mumbleAPI.log(ownID, programNames[i]);
@@ -253,7 +284,7 @@ uint8_t mumble_initPositionalData(const char* const* programNames,
             if (failed || (strcmp(buffer, BARONY_LEGACY_VERSION) != 0)) {
                 // Not legacy, assume stable
                 legacy         = false;
-                baronyBaseAddr = BARONY_STABLE_DEFAULT_BASE;
+                baronyBaseAddr = get_base_address(baronyPID);
             } else {
                 legacy = true;
             }
