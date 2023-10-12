@@ -52,3 +52,9 @@ Mkfile.old
 dkms.conf
 /.vs
 /out/build/x64-Debug
+
+# Cmake
+Makefile
+CMakeCache.txt
+cmake_install.cmake
+CMakeFiles
